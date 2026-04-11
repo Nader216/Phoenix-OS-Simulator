@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Neon OS Simulator</title>
+    <style>
+        :root {
+            --bg-blur: rgba(15, 23, 42, 0.8);
+            --accent: #3b82f6;
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text: #f1f5f9;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; font-family: 'Segoe UI', sans-serif; }
+        body {
+            height: 100vh; overflow: hidden;
+            background: linear-gradient(135deg, #0f172a, #1e2937, #334155);
+            background-size: 400% 400%;
+            animation: moveBG 10s ease infinite;
+        }
+        @keyframes moveBG { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+        .desktop { width: 100%; height: 100%; position: relative; padding: 20px; }
+        .desktop-icons { display: flex; gap: 30px; z-index: 10; }
+        .icon {
+            display: flex; flex-direction: column; align-items: center; color: white;
+            cursor: pointer; transition: 0.3s; padding: 10px; border-radius: 12px;
+        }
+        .icon:hover { background: rgba(255,255,255,0.1); backdrop-filter: blur(5px); }
+        .icon span { font-size: 45px; }
+        .window {
+            position: absolute; background: var(--bg-blur); backdrop-filter: blur(15px);
+            border-radius: 15px; border: 1px solid var(--glass-border);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; overflow: hidden;
+        }
+        .window-header {
+            background: rgba(0,0,0,0.4); padding: 12px 15px; display: flex;
+            justify-content: space-between; align-items: center; color: white; cursor: grab;
+        }
+        .controls { display: flex; gap: 8px; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer; }
+        .dot.red { background: #ff5f57; }
+        .window-content { flex: 1; overflow: auto; color: white; }
+        .fm-nav { padding: 10px; background: rgba(0,0,0,0.2); display: flex; gap: 10px; }
+        .fm-btn { background: var(--accent); color: white; border: none; padding: 5px 12px; border-radius: 5px; cursor: pointer; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, 90px); gap: 10px; padding: 20px; }
+        .item { text-align: center; cursor: pointer; padding: 10px; border-radius: 8px; }
+        .item:hover { background: rgba(255,255,255,0.1); }
+        .item b { font-size: 35px; display: block; }
+        #termIn { width: 100%; background: transparent; border: none; color: #4ade80; outline: none; font-family: monospace; }
+    </style>
+</head>
+<body>
+<div class="desktop">
+    <div class="desktop-icons">
+        <div class="icon" onclick="openFM()"><span>📂</span><label>Files</label></div>
+        <div class="icon" onclick="openTerm()"><span>💻</span><label>Terminal</label></div>
+    </div>
+</div>
+<script>
+let fs = JSON.parse(localStorage.getItem("vanguard_fs") || '{"root":{"type":"folder","children":{"Docs":{"type":"folder","children":{}}}}}');
+function save() { localStorage.setItem("vanguard_fs", JSON.stringify(fs)); }
+function get(path) {
+    let node = fs.root;
+    path.split("/").filter(p => p).forEach(p => node = node.children[p]);
+    return node;
+}
+function makeWin(title, w, h, run) {
+    const win = document.createElement("div");
+    win.className = "window"; win.style.width = w+"px"; win.style.height = h+"px";
+    win.style.left = "50px"; win.style.top = "50px"; win.style.zIndex = 1000;
+    win.innerHTML = `<div class="window-header"><span>${title}</span><div class="controls"><button class="dot red"></button></div></div><div class="window-content"></div>`;
+    document.body.appendChild(win);
+    win.querySelector(".red").onclick = () => win.remove();
+    run(win.querySelector(".window-content"));
+}
+function openFM(path = "/") {
+    makeWin("File Manager", 500, 350, (cont) => {
+        const node = get(path);
+        cont.innerHTML = `<div class="fm-nav"><button class="fm-btn" id="nF">📄+ File</button><button class="fm-btn" id="nD">📁+ Dir</button></div><div class="grid"></div>`;
+        Object.keys(node.children).forEach(name => {
+            const item = document.createElement("div"); item.className = "item";
+            item.innerHTML = `<b>${node.children[name].type === 'folder' ? '📁' : '📄'}</b><span>${name}</span>`;
+            item.onclick = () => node.children[name].type === 'folder' ? openFM(path + name + "/") : null;
+            cont.querySelector(".grid").appendChild(item);
+        });
+        cont.querySelector("#nF").onclick = () => { let n = prompt("Name:"); if(n){ node.children[n]={type:"file",content:""}; save(); openFM(path); } };
+        cont.querySelector("#nD").onclick = () => { let n = prompt("Name:"); if(n){ node.children[n]={type:"folder",children:{}}; save(); openFM(path); } };
+    });
+}
+function openTerm() {
+    makeWin("Terminal", 500, 300, (cont) => {
+        cont.style.background = "#000"; cont.style.padding = "10px";
+        cont.innerHTML = `<div id="out" style="color:#4ade80; font-family:monospace">NeonOS v1.0<br>Type 'ls' or 'clear'</div><div style="display:flex;color:#4ade80"><span>$ </span><input id="termIn"></div>`;
+        const input = cont.querySelector("#termIn");
+        input.onkeypress = (e) => {
+            if(e.key === "Enter") {
+                const cmd = input.value.trim();
+                const div = document.createElement("div"); div.textContent = "$ " + cmd;
+                cont.querySelector("#out").appendChild(div);
+                if(cmd === "ls") {
+                    const res = document.createElement("div");
+                    res.textContent = Object.keys(fs.root.children).join("  ");
+                    cont.querySelector("#out").appendChild(res);
+                } else if(cmd === "clear") cont.querySelector("#out").innerHTML = "";
+                input.value = "";
+            }
+        };
+    });
+}
+</script>
+</body>
+</html>
+
